@@ -48,6 +48,18 @@ app = FastAPI(title="Gemini API Key Pool Proxy", lifespan=lifespan)
 app.include_router(admin_router)
 
 
+@app.get("/")
+async def root(request: Request) -> Dict[str, object]:
+    key_manager = request.app.state.key_manager
+    status = key_manager.get_status()
+    return {
+        "service": "Gemini API Key Pool Proxy",
+        "status": "running",
+        "keys_available": status["available_keys"],
+        "total_keys": status["total_keys"],
+    }
+
+
 @app.get("/health")
 async def health_check(request: Request) -> Dict[str, object]:
     """Health check endpoint with key pool status."""

@@ -11,6 +11,7 @@ from app.config import load_config
 from app.key_manager import KeyManager
 from app.proxy import proxy_request
 from app.admin import admin_router
+from app.sdk_support import sdk_router
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Gemini API Key Pool Proxy", lifespan=lifespan)
 
-# Include admin router BEFORE catch-all route
+# Include routers BEFORE catch-all route
 app.include_router(admin_router)
+app.include_router(sdk_router)
 
 
 @app.get("/")

@@ -7,7 +7,9 @@
 - 透明代理：调用方只需修改 base URL，无需管理 Key
 - Key 池管理：支持多个 Key，自动选择剩余 RPD 最多的 Key
 - RPD/RPM 追踪：精确追踪每个 Key 的每日和每分钟请求数
-- 429 自动重试：遇到速率限制自动切换 Key 重试
+- 429 自动重试：遇到速率限制自动切换 Key 重试（区分 RPD/RPM 限制）
+- SSE 流式响应：支持 `alt=sse` 流式输出
+- SDK 直连支持：为无法使用 HTTP 代理的 SDK 客户端（如 `google-genai`）提供 Key 分配 API
 - 管理端点：查看 Key 状态、手动重置计数器、动态添加/移除 Key
 
 ## 环境要求
@@ -53,6 +55,40 @@ curl -X POST "http://localhost:8000/upload/v1beta/files" \
   --data-binary @document.pdf
 ```
 
+### SDK 直连模式
+
+对于无法设置自定义 base URL 的 SDK 客户端（如 `google-genai`），可通过号池分配真实 API Key 后直连 Google API：
+
+```python
+import requests
+from google import genai
+
+PROXY = "http://localhost:8000"
+
+# 1. 从号池分配一个可用 Key
+resp = requests.post(f"{PROXY}/sdk/allocate-key")
+data = resp.json()  # {"key_id": "key_1", "api_key": "AIzaSy..."}
+
+# 2. 用真实 Key 初始化 SDK，直连 Google API
+client = genai.Client(api_key=data["api_key"])
+
+# 3. 正常使用 SDK（如上传视频、生成内容等）
+video_file = client.files.upload(path="video.mp4")
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents=[{"role": "user", "parts": [
+        {"file_data": {"file_uri": video_file.uri}},
+        {"text": "分析这个视频"},
+    ]}],
+)
+
+# 4. 调用完成后向号池报告用量
+requests.post(f"{PROXY}/sdk/report-usage", json={"key_id": data["key_id"]})
+
+# 如果调用失败，报告错误
+# requests.post(f"{PROXY}/sdk/report-error", json={"key_id": data["key_id"], "is_rpd_limit": False})
+```
+
 ### 管理端点
 
 ```bash
@@ -65,10 +101,10 @@ curl http://localhost:8000/admin/status/key_1
 # 手动重置计数器
 curl -X POST http://localhost:8000/admin/reset
 
-# 添加 Key
+# 添加 Key（参数：api_key 必填，rpd_limit/rpm_limit 可选）
 curl -X POST http://localhost:8000/admin/keys \
   -H "Content-Type: application/json" \
-  -d '{"key":"AIzaSy...","project_id":"project-1"}'
+  -d '{"api_key":"AIzaSy...","rpd_limit":250,"rpm_limit":10}'
 
 # 移除 Key
 curl -X DELETE http://localhost:8000/admin/keys/key_1
@@ -78,8 +114,12 @@ curl -X DELETE http://localhost:8000/admin/keys/key_1
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/{path:path}` | 任意 | 代理所有 Gemini API 请求 |
+| `/` | GET | 服务状态（可用/总计 Key 数） |
 | `/health` | GET | 健康检查 |
+| `/{path:path}` | 任意 | 透明代理所有 Gemini API 请求 |
+| `/sdk/allocate-key` | POST | 从号池分配一个可用 API Key |
+| `/sdk/report-usage` | POST | 报告 SDK 直连的成功调用 |
+| `/sdk/report-error` | POST | 报告 SDK 直连的调用错误 |
 | `/admin/status` | GET | 查看所有 Key 状态 |
 | `/admin/status/{key_id}` | GET | 查看单个 Key 状态 |
 | `/admin/reset` | POST | 手动重置所有计数器 |

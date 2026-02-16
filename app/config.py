@@ -27,8 +27,12 @@ class Config:
             )
 
 
-def load_config() -> Config:
+def load_config(*, use_dotenv: bool = True) -> Config:
     """Load configuration from environment variables.
+
+    Args:
+        use_dotenv: Whether to load .env file. Set False in tests to avoid
+            .env pollution overriding monkeypatched env vars.
 
     Returns:
         Config: Configured application settings
@@ -36,7 +40,8 @@ def load_config() -> Config:
     Raises:
         ValueError: If required environment variables are missing or invalid
     """
-    load_dotenv()
+    if use_dotenv:
+        load_dotenv()
 
     api_keys_raw = os.getenv("GEMINI_API_KEYS", "")
     api_keys = [key.strip() for key in api_keys_raw.split(",") if key.strip()]

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, List, Optional, Protocol, Tuple, cast
+from typing import Dict, List, Optional, Protocol, Tuple, Union, cast
 from urllib.parse import parse_qsl, urlencode
 
 import httpx
@@ -113,11 +113,11 @@ async def proxy_request(
 
         forward_headers = {**headers, "x-goog-api-key": selected_key.key}
 
-        try:
-            is_streaming = dict(query_params).get("alt") == "sse"
+        is_streaming = dict(query_params).get("alt") == "sse"
 
+        try:
             if is_streaming:
-                return await _handle_streaming_request(
+                result = await _try_streaming_request(
                     config,
                     path,
                     request.method,
@@ -127,14 +127,17 @@ async def proxy_request(
                     key_manager,
                     selected_key,
                 )
-
-            response = await http_client.request(
-                method=request.method,
-                url=f"/{path}",
-                content=body,
-                headers=forward_headers,
-                params=tuple(query_params),
-            )
+                if isinstance(result, StreamingResponse):
+                    return result
+                response = result
+            else:
+                response = await http_client.request(
+                    method=request.method,
+                    url=f"/{path}",
+                    content=body,
+                    headers=forward_headers,
+                    params=tuple(query_params),
+                )
 
             await key_manager.record_request(selected_key.id)
 
@@ -205,7 +208,7 @@ def _is_rpd_limit(response: httpx.Response) -> bool:
         return False
 
 
-async def _handle_streaming_request(
+async def _try_streaming_request(
     config: Config,
     path: str,
     method: str,
@@ -214,34 +217,64 @@ async def _handle_streaming_request(
     query_params: List[Tuple[str, str]],
     key_manager: KeyManager,
     selected_key: ApiKey,
-) -> StreamingResponse:
-    """Handle streaming (SSE) requests."""
-
-    async def stream_generator():
-        async with httpx.AsyncClient(
-            base_url=config.gemini_base_url,
-            timeout=httpx.Timeout(10.0, read=None),
-        ) as streaming_client:
-            async with streaming_client.stream(
+) -> Union[StreamingResponse, httpx.Response]:
+    streaming_client = httpx.AsyncClient(
+        base_url=config.gemini_base_url,
+        timeout=httpx.Timeout(10.0, read=None),
+    )
+    try:
+        response = await streaming_client.send(
+            streaming_client.build_request(
                 method=method,
                 url=f"/{path}",
                 content=body,
                 headers=headers,
                 params=tuple(query_params),
-            ) as response:
-                await key_manager.record_request(selected_key.id)
+            ),
+            stream=True,
+        )
 
-                if response.status_code != 200:
-                    error_body = await response.aread()
-                    if error_body:
-                        yield error_body
-                    return
+        if response.status_code == 429:
+            error_body = await response.aread()
+            await response.aclose()
+            await streaming_client.aclose()
+            return httpx.Response(
+                status_code=429,
+                content=error_body,
+                headers=dict(response.headers),
+            )
 
+        if response.status_code != 200:
+            error_body = await response.aread()
+            await response.aclose()
+            await streaming_client.aclose()
+            resp_headers = {
+                k: v
+                for k, v in response.headers.items()
+                if k.lower() not in HOP_BY_HOP_HEADERS
+            }
+            return StreamingResponse(
+                content=iter([error_body]),
+                status_code=response.status_code,
+                headers=resp_headers,
+                media_type=response.headers.get("content-type"),
+            )
+
+        async def stream_generator():
+            try:
                 async for chunk in response.aiter_bytes():
                     if chunk:
                         yield chunk
+                await key_manager.record_request(selected_key.id)
+            finally:
+                await response.aclose()
+                await streaming_client.aclose()
 
-    return StreamingResponse(
-        stream_generator(),
-        media_type="text/event-stream",
-    )
+        return StreamingResponse(
+            stream_generator(),
+            status_code=200,
+            media_type="text/event-stream",
+        )
+    except Exception:
+        await streaming_client.aclose()
+        raise

@@ -6,7 +6,7 @@ from app.config import Config, load_config
 def test_config_loads_valid_env(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEYS", "key1,key2")
 
-    config = load_config()
+    config = load_config(use_dotenv=False)
 
     assert config.api_keys == ["key1", "key2"]
     assert config.port == 8000
@@ -27,7 +27,7 @@ def test_config_missing_api_keys(monkeypatch):
         ValueError,
         match="GEMINI_API_KEYS environment variable must be set and non-empty",
     ):
-        load_config()
+        load_config(use_dotenv=False)
 
 
 def test_config_empty_api_keys(monkeypatch):
@@ -37,7 +37,7 @@ def test_config_empty_api_keys(monkeypatch):
         ValueError,
         match="GEMINI_API_KEYS environment variable must be set and non-empty",
     ):
-        load_config()
+        load_config(use_dotenv=False)
 
 
 def test_config_custom_values(monkeypatch):
@@ -51,7 +51,7 @@ def test_config_custom_values(monkeypatch):
     monkeypatch.setenv("GEMINI_BASE_URL", "https://custom.api.com")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
 
-    config = load_config()
+    config = load_config(use_dotenv=False)
 
     assert config.api_keys == ["custom_key"]
     assert config.port == 9000
@@ -67,6 +67,6 @@ def test_config_custom_values(monkeypatch):
 def test_config_strips_whitespace(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEYS", " key1 , key2 ")
 
-    config = load_config()
+    config = load_config(use_dotenv=False)
 
     assert config.api_keys == ["key1", "key2"]

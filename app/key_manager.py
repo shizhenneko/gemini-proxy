@@ -1,10 +1,8 @@
-# pyright: reportMissingImports=false, reportUnknownVariableType=false
-
 """Key pool management."""
 
 import asyncio
 import time
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Dict, Optional, cast
 
 try:
@@ -68,7 +66,7 @@ class KeyManager:
 
             key.rpd_used += 1
             key.rpm_timestamps.append(time.time())
-            key.last_used = datetime.now()
+            key.last_used = datetime.now(timezone.utc)
 
             if key.rpd_used >= key.rpd_limit:
                 key.status = STATUS_EXHAUSTED
@@ -79,7 +77,7 @@ class KeyManager:
             if not key:
                 return
 
-            key.last_error = datetime.now()
+            key.last_error = datetime.now(timezone.utc)
             key.consecutive_failures += 1
 
             if is_rpd_limit:
@@ -95,13 +93,22 @@ class KeyManager:
             ):
                 return
 
-            for key in self.pool.keys.values():
-                key.rpd_used = 0
-                key.consecutive_failures = 0
-                if key.status == STATUS_EXHAUSTED:
-                    key.status = STATUS_ACTIVE
-
+            self._reset_all_keys()
             self.pool.last_reset_date = now_pacific.date()
+
+    async def force_reset(self) -> None:
+        async with self._lock:
+            self._reset_all_keys()
+            pacific_tz = cast(tzinfo, ZoneInfo("America/Los_Angeles"))
+            self.pool.last_reset_date = datetime.now(pacific_tz).date()
+
+    def _reset_all_keys(self) -> None:
+        for key in self.pool.keys.values():
+            key.rpd_used = 0
+            key.consecutive_failures = 0
+            key.rpm_timestamps.clear()
+            if key.status == STATUS_EXHAUSTED:
+                key.status = STATUS_ACTIVE
 
     async def add_key(
         self, api_key: str, rpd_limit: int = 250, rpm_limit: int = 10
@@ -126,38 +133,42 @@ class KeyManager:
             del self.pool.keys[key_id]
             return True
 
-    def get_status(self) -> Dict[str, object]:
-        available_keys = 0
-        exhausted_keys = 0
+    async def get_status(self) -> Dict[str, object]:
+        async with self._lock:
+            available_keys = 0
+            exhausted_keys = 0
 
-        for key in self.pool.keys.values():
-            if key.status == STATUS_EXHAUSTED:
-                exhausted_keys += 1
-            if (
-                key.status == STATUS_ACTIVE
-                and key.rpd_remaining > 0
-                and key.rpm_current < key.rpm_limit
-            ):
-                available_keys += 1
+            for key in self.pool.keys.values():
+                if key.status == STATUS_EXHAUSTED:
+                    exhausted_keys += 1
+                if (
+                    key.status == STATUS_ACTIVE
+                    and key.rpd_remaining > 0
+                    and key.rpm_current < key.rpm_limit
+                ):
+                    available_keys += 1
 
-        next_reset = None
-        if self.pool.last_reset_date:
-            next_reset_date = self.pool.last_reset_date + timedelta(days=1)
-            next_reset = next_reset_date.isoformat()
+            next_reset = None
+            if self.pool.last_reset_date:
+                next_reset_date = self.pool.last_reset_date + timedelta(days=1)
+                next_reset = next_reset_date.isoformat()
 
-        return {
-            "total_keys": len(self.pool.keys),
-            "available_keys": available_keys,
-            "exhausted_keys": exhausted_keys,
-            "next_reset": next_reset,
-            "keys": [self._format_key_status(key) for key in self.pool.keys.values()],
-        }
+            return {
+                "total_keys": len(self.pool.keys),
+                "available_keys": available_keys,
+                "exhausted_keys": exhausted_keys,
+                "next_reset": next_reset,
+                "keys": [
+                    self._format_key_status(key) for key in self.pool.keys.values()
+                ],
+            }
 
-    def get_key_status(self, key_id: str) -> Optional[Dict[str, object]]:
-        key = self.pool.keys.get(key_id)
-        if not key:
-            return None
-        return self._format_key_status(key)
+    async def get_key_status(self, key_id: str) -> Optional[Dict[str, object]]:
+        async with self._lock:
+            key = self.pool.keys.get(key_id)
+            if not key:
+                return None
+            return self._format_key_status(key)
 
     def _format_key_status(self, key: ApiKey) -> Dict[str, object]:
         return {

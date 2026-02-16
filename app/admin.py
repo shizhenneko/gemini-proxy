@@ -12,14 +12,14 @@ admin_router = APIRouter(prefix="/admin", tags=["admin"])
 async def get_all_status(request: Request) -> Dict[str, object]:
     """Get status of all API keys in the pool."""
     key_manager = request.app.state.key_manager
-    return key_manager.get_status()
+    return await key_manager.get_status()
 
 
 @admin_router.get("/status/{key_id}")
 async def get_key_status(request: Request, key_id: str) -> Dict[str, object]:
     """Get status of a specific API key."""
     key_manager = request.app.state.key_manager
-    status = key_manager.get_key_status(key_id)
+    status = await key_manager.get_key_status(key_id)
     if status is None:
         raise HTTPException(status_code=404, detail=f"Key {key_id} not found")
     return status
@@ -29,7 +29,7 @@ async def get_key_status(request: Request, key_id: str) -> Dict[str, object]:
 async def reset_counters(request: Request) -> Dict[str, str]:
     """Reset daily counters for all keys."""
     key_manager = request.app.state.key_manager
-    await key_manager.check_and_reset_daily()
+    await key_manager.force_reset()
     return {"message": "Counters reset successfully"}
 
 
@@ -43,6 +43,14 @@ async def add_key(request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail="api_key is required")
     rpd_limit = body.get("rpd_limit", 250)
     rpm_limit = body.get("rpm_limit", 10)
+    if not isinstance(rpd_limit, int) or rpd_limit <= 0:
+        raise HTTPException(
+            status_code=400, detail="rpd_limit must be a positive integer"
+        )
+    if not isinstance(rpm_limit, int) or rpm_limit <= 0:
+        raise HTTPException(
+            status_code=400, detail="rpm_limit must be a positive integer"
+        )
     try:
         key_id = await key_manager.add_key(api_key, rpd_limit, rpm_limit)
         return JSONResponse(content={"key_id": key_id}, status_code=201)

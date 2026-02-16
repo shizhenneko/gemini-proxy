@@ -19,7 +19,7 @@ async def test_e2e_proxy_real_gemini(monkeypatch):
     """Smoke test: proxy a real request to Gemini API."""
     monkeypatch.setenv("GEMINI_API_KEYS", GEMINI_TEST_KEY)
 
-    config = load_config()
+    config = load_config(use_dotenv=False)
     http_client = httpx.AsyncClient(
         base_url=config.gemini_base_url,
         timeout=httpx.Timeout(10.0, read=300.0, write=30.0),

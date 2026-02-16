@@ -53,7 +53,7 @@ app.include_router(sdk_router)
 @app.get("/")
 async def root(request: Request) -> Dict[str, object]:
     key_manager = request.app.state.key_manager
-    status = key_manager.get_status()
+    status = await key_manager.get_status()
     return {
         "service": "Gemini API Key Pool Proxy",
         "status": "running",
@@ -66,7 +66,7 @@ async def root(request: Request) -> Dict[str, object]:
 async def health_check(request: Request) -> Dict[str, object]:
     """Health check endpoint with key pool status."""
     key_manager = request.app.state.key_manager
-    status = key_manager.get_status()
+    status = await key_manager.get_status()
     return {
         "status": "healthy",
         "keys_available": status["available_keys"],

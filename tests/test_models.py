@@ -6,8 +6,6 @@ from app.models import (
     PoolState,
     STATUS_ACTIVE,
     STATUS_EXHAUSTED,
-    STATUS_DISABLED,
-    STATUS_COOLDOWN,
 )
 
 
@@ -16,7 +14,6 @@ def test_api_key_defaults():
 
     assert key.id == "key_1"
     assert key.key == "test-key-123"
-    assert key.project_id == ""
     assert key.rpd_limit == 250
     assert key.rpm_limit == 10
     assert key.rpd_used == 0

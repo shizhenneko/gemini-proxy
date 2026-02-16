@@ -15,7 +15,7 @@ def set_env(monkeypatch):
 
 @pytest.fixture
 def app():
-    config = load_config()
+    config = load_config(use_dotenv=False)
     http_client = httpx.AsyncClient(base_url=config.gemini_base_url)
     key_manager = KeyManager(config)
 

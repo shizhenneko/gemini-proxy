@@ -255,9 +255,10 @@ async def test_concurrent_requests():
     assert len(key.rpm_timestamps) == 60
 
 
-def test_get_status_format():
+@pytest.mark.asyncio
+async def test_get_status_format():
     manager = KeyManager(make_config(["k1", "k2"]))
-    status = manager.get_status()
+    status = await manager.get_status()
     keys_list = cast(List[Dict[str, object]], status["keys"])
 
     assert status["total_keys"] == 2
@@ -270,11 +271,12 @@ def test_get_status_format():
     assert "key_prefix" in keys_list[0]
 
 
-def test_get_key_status():
+@pytest.mark.asyncio
+async def test_get_key_status():
     manager = KeyManager(make_config(["k1"]))
 
-    key_status = manager.get_key_status("key_1")
+    key_status = await manager.get_key_status("key_1")
 
     assert key_status is not None
     assert key_status["id"] == "key_1"
-    assert manager.get_key_status("missing") is None
+    assert await manager.get_key_status("missing") is None

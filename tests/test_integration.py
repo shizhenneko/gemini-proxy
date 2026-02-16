@@ -15,7 +15,7 @@ async def app(monkeypatch):
     """Set up app with test configuration."""
     monkeypatch.setenv("GEMINI_API_KEYS", "test_key_1,test_key_2,test_key_3")
 
-    config = load_config()
+    config = load_config(use_dotenv=False)
     http_client = httpx.AsyncClient(base_url=config.gemini_base_url)
     key_manager = KeyManager(config)
 
@@ -151,7 +151,7 @@ async def test_rpd_exhaustion_marks_key(app):
                 )
                 assert response.status_code == 200
 
-            status = key_manager.get_status()
+            status = await key_manager.get_status()
             key_1_status = next(k for k in status["keys"] if k["id"] == "key_1")
             assert key_1_status["status"] == "exhausted"
             assert key_1_status["rpd_used"] == 2

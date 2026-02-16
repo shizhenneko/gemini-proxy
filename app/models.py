@@ -7,8 +7,6 @@ import time
 
 STATUS_ACTIVE = "active"
 STATUS_EXHAUSTED = "exhausted"
-STATUS_DISABLED = "disabled"
-STATUS_COOLDOWN = "cooldown"
 
 
 @dataclass
@@ -17,7 +15,6 @@ class ApiKey:
 
     id: str
     key: str
-    project_id: str = ""
     rpd_limit: int = 250
     rpm_limit: int = 10
     rpd_used: int = 0
